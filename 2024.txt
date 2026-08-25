@@ -202,71 +202,42 @@ namespace GorillaBotIntegrated
         private void DrawFormationWindow(int id)
         {
             GUILayout.BeginVertical();
-
             GUILayout.Label("=== FORMATIONS ===", Bold());
             GUILayout.Label($"Active bots: {_bots.Count}");
 
-            if (GUILayout.Button("DOWN", GUILayout.Height(30)))
-                ApplyFormation("Down");
-
-            if (GUILayout.Button("BOUNCE", GUILayout.Height(30)))
-                ApplyFormation("Bounce");
+            if (GUILayout.Button("DOWN", GUILayout.Height(30))) ApplyFormation("Down");
+            if (GUILayout.Button("BOUNCE", GUILayout.Height(30))) ApplyFormation("Bounce");
 
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("CIRCLE", GUILayout.Height(30)))
-                ApplyFormation("Circle");
-            if (GUILayout.Button("SQUARE", GUILayout.Height(30)))
-                ApplyFormation("Square");
+            if (GUILayout.Button("CIRCLE", GUILayout.Height(30))) ApplyFormation("Circle");
+            if (GUILayout.Button("SQUARE", GUILayout.Height(30))) ApplyFormation("Square");
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("WAVE", GUILayout.Height(30)))
-                ApplyFormation("Wave");
-            if (GUILayout.Button("LINE", GUILayout.Height(30)))
-                ApplyFormation("Line");
+            if (GUILayout.Button("WAVE", GUILayout.Height(30))) ApplyFormation("Wave");
+            if (GUILayout.Button("LINE", GUILayout.Height(30))) ApplyFormation("Line");
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("TRIANGLE", GUILayout.Height(30)))
-                ApplyFormation("Triangle");
-            if (GUILayout.Button("DIAMOND", GUILayout.Height(30)))
-                ApplyFormation("Diamond");
+            if (GUILayout.Button("TRIANGLE", GUILayout.Height(30))) ApplyFormation("Triangle");
+            if (GUILayout.Button("DIAMOND", GUILayout.Height(30))) ApplyFormation("Diamond");
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("GRID", GUILayout.Height(30)))
-                ApplyFormation("Grid");
-            if (GUILayout.Button("SPIRAL", GUILayout.Height(30)))
-                ApplyFormation("Spiral");
+            if (GUILayout.Button("GRID", GUILayout.Height(30))) ApplyFormation("Grid");
+            if (GUILayout.Button("SPIRAL", GUILayout.Height(30))) ApplyFormation("Spiral");
             GUILayout.EndHorizontal();
 
-            if (GUILayout.Button("HELIX", GUILayout.Height(30)))
-                ApplyFormation("Helix");
-
-            if (GUILayout.Button("SPAZ", GUILayout.Height(36)))
-                ApplyFormation("Spaz");
-
-            // New formation
-            if (GUILayout.Button("FOLLOW PLAYER LINE", GUILayout.Height(36)))
-                ApplyFormation("FollowLine");
+            if (GUILayout.Button("HELIX", GUILayout.Height(30))) ApplyFormation("Helix");
+            if (GUILayout.Button("SPAZ", GUILayout.Height(36))) ApplyFormation("Spaz");
 
             GUILayout.Space(8);
-
-            GUILayout.Label(
-                "FOLLOW PLAYER LINE places the bots in a line behind your GorillaPlayer."
-            );
-
-            GUILayout.Label(
-                "SPAZ jitters body, head and both hands near the forest spawn point."
-            );
-
-            GUILayout.Space(5);
+            GUILayout.Label("SPAZ jitters body, head and both hands near the forest spawn point.");
 
             if (GUILayout.Button("DISCONNECT ALL BOTS", GUILayout.Height(34)))
                 DisconnectAllBots();
 
             GUILayout.EndVertical();
-
             GUI.DragWindow(new Rect(0, 0, 10000, 22));
         }
 
@@ -397,36 +368,14 @@ namespace GorillaBotIntegrated
         {
             if (_bots == null || _bots.Count == 0)
             {
-                Log.LogWarning(
-                    $"Cannot apply formation '{mode}': no bots are active.");
+                Log.LogWarning($"[FORMATIONS] Cannot apply {mode}: no bots are active.");
                 return;
             }
 
-            int total = _bots.Count;
+            for (int i = 0; i < _bots.Count; i++)
+                _bots[i].ConfigureFormation(mode, i, _bots.Count);
 
-            Log.LogInfo(
-                $"Applying formation '{mode}' to {total} bots.");
-
-            for (int i = 0; i < total; i++)
-            {
-                BotInstance bot = _bots[i];
-
-                if (bot == null)
-                    continue;
-
-                try
-                {
-                    bot.ConfigureFormation(
-                        mode,
-                        i,
-                        total);
-                }
-                catch (Exception ex)
-                {
-                    Log.LogError(
-                        $"Formation failed for bot {i + 1}/{total}: {ex}");
-                }
-            }
+            Log.LogInfo($"[FORMATIONS] Applied {mode} to {_bots.Count} bots.");
         }
 
         public void DisconnectAllBots()
@@ -715,7 +664,7 @@ namespace GorillaBotIntegrated
         public void LogDebug(string fmt, params object[] args) { }
     }
 
-    public class BotInstance : IConnectionCallbacks, IMatchmakingCallbacks
+    public class BotInstance : IConnectionCallbacks, IMatchmakingCallbacks, IOnEventCallback
     {
         private static int _idCounter;
         public readonly string Id = Interlocked.Increment(ref _idCounter).ToString();
@@ -760,6 +709,18 @@ namespace GorillaBotIntegrated
         private bool _rigPositionSet;
         private float _lastRigSendTime;
 
+        // Cosmetic IDs supplied for the bot cosmetic pool. The game RPC expects
+        // display names, so each ID is resolved through CosmeticsController.
+        private static readonly string[] BotCosmeticItemIds =
+        {
+            "LHADL", "LHAEC", "LBADO", "LFABB", "LBAAQ",
+            "LBAAP", "LSAAC", "LHAAX", "LFAAT", "LBAAN"
+        };
+
+        private string _equippedCosmeticId;
+        private string[] _equippedCosmeticDisplayNames;
+        private bool _cosmeticsBuilt;
+
         private enum FormationMode
         {
             Down,
@@ -773,8 +734,7 @@ namespace GorillaBotIntegrated
             Grid,
             Spiral,
             Helix,
-            Spaz,
-            FollowLine
+            Spaz
         }
 
         private FormationMode _formationMode = FormationMode.Down;
@@ -1231,6 +1191,238 @@ namespace GorillaBotIntegrated
         public void OnLeftLobby() { }
         public void OnLobbyStatisticsUpdate(List<TypedLobbyInfo> lobbyStatistics) { }
 
+        public void OnEvent(EventData photonEvent)
+        {
+            try
+            {
+                // PUN RPC traffic uses event code 200. The game's VRRig asks
+                // its owner for cosmetics with RequestCosmetics; answer with
+                // the normal UpdateCosmeticsWithTryon RPC format.
+                if (photonEvent == null || photonEvent.Code != 200)
+                    return;
+
+                if (!(photonEvent.CustomData is Hashtable rpc))
+                    return;
+
+                int viewId = 0;
+                if (rpc.ContainsKey((byte)0))
+                    viewId = Convert.ToInt32(rpc[(byte)0]);
+
+                if (_botRigViewId <= 0 || viewId != _botRigViewId)
+                    return;
+
+                string methodName = null;
+                if (rpc.ContainsKey((byte)3))
+                    methodName = rpc[(byte)3] as string;
+
+                // If the build uses an RPC shortcut, there may be no string
+                // method name. In that case the request is still scoped to our
+                // newly-created rig, so answering with the cosmetic update is
+                // compatible with the normal startup sequence.
+                if (!string.IsNullOrEmpty(methodName) &&
+                    !methodName.Equals("RequestCosmetics", StringComparison.Ordinal))
+                    return;
+
+                int requesterActor = photonEvent.Sender;
+                if (requesterActor <= 0)
+                    return;
+
+                SendCosmeticsRpc(requesterActor, viewId);
+            }
+            catch (Exception ex)
+            {
+                GorillaBotPlugin.Log.LogWarning(
+                    $"[{_name}] Cosmetic RPC receive failed: {ex.Message}");
+            }
+        }
+
+        private string[] BuildRandomCosmeticDisplayNames()
+        {
+            if (_cosmeticsBuilt && _equippedCosmeticDisplayNames != null)
+                return _equippedCosmeticDisplayNames;
+
+            try
+            {
+                var controller = GorillaNetworking.CosmeticsController.instance;
+                if (controller == null)
+                {
+                    GorillaBotPlugin.Log.LogWarning(
+                        $"[{_name}] CosmeticsController is not initialized yet.");
+                    return null;
+                }
+
+                var set = new GorillaNetworking.CosmeticsController.CosmeticSet();
+                set.ClearSet(controller.nullItem);
+
+                // Randomize the candidate order so different bots do not all
+                // receive the same cosmetic.
+                var candidates = BotCosmeticItemIds.ToList();
+                for (int i = candidates.Count - 1; i > 0; i--)
+                {
+                    int j = UnityEngine.Random.Range(0, i + 1);
+                    string temp = candidates[i];
+                    candidates[i] = candidates[j];
+                    candidates[j] = temp;
+                }
+
+                foreach (string itemId in candidates)
+                {
+                    try
+                    {
+                        var item = controller.GetItemFromDict(itemId);
+                        if (item.isNullItem || string.IsNullOrEmpty(item.itemName))
+                            continue;
+
+                        // ApplyCosmeticItemToSet handles the correct slot for
+                        // hats/faces/badges/skin/holdables instead of assuming
+                        // that every supplied ID belongs in the hat slot.
+                        controller.ApplyCosmeticItemToSet(
+                            set,
+                            item,
+                            false,
+                            false);
+
+                        string[] names = set.ToDisplayNameArray();
+                        if (names != null && names.Length == 11)
+                        {
+                            _equippedCosmeticId = itemId;
+                            _equippedCosmeticDisplayNames = names.ToArray();
+                            _cosmeticsBuilt = true;
+
+                            GorillaBotPlugin.Log.LogInfo(
+                                $"[{_name}] Random cosmetic selected: " +
+                                $"{itemId} / {item.displayName}");
+
+                            return _equippedCosmeticDisplayNames;
+                        }
+                    }
+                    catch (Exception itemEx)
+                    {
+                        GorillaBotPlugin.Log.LogWarning(
+                            $"[{_name}] Cosmetic {itemId} could not be resolved: " +
+                            itemEx.Message);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                GorillaBotPlugin.Log.LogWarning(
+                    $"[{_name}] BuildRandomCosmeticDisplayNames: {ex.Message}");
+            }
+
+            return null;
+        }
+
+        private string[] BuildEmptyCosmeticDisplayNames()
+        {
+            try
+            {
+                var controller = GorillaNetworking.CosmeticsController.instance;
+                if (controller == null)
+                    return null;
+
+                var set = new GorillaNetworking.CosmeticsController.CosmeticSet();
+                set.ClearSet(controller.nullItem);
+                return set.ToDisplayNameArray();
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private void SendCosmeticsRpc(int targetActor, int viewId)
+        {
+            try
+            {
+                if (_photonClient == null || !_photonClient.InRoom)
+                    return;
+
+                string[] cosmeticNames = BuildRandomCosmeticDisplayNames();
+                string[] tryOnNames = BuildEmptyCosmeticDisplayNames();
+
+                if (cosmeticNames == null || cosmeticNames.Length != 11 ||
+                    tryOnNames == null || tryOnNames.Length != 11)
+                {
+                    GorillaBotPlugin.Log.LogWarning(
+                        $"[{_name}] Could not build cosmetic RPC payload.");
+                    return;
+                }
+
+                var rpc = new Hashtable
+                {
+                    [(byte)0] = viewId,
+                    [(byte)2] = GetBotServerTimestamp(),
+                    [(byte)3] = "UpdateCosmeticsWithTryon",
+                    [(byte)4] = new object[] { cosmeticNames, tryOnNames }
+                };
+
+                var options = new RaiseEventOptions
+                {
+                    TargetActors = new[] { targetActor }
+                };
+
+                bool ok = _photonClient.OpRaiseEvent(
+                    200,
+                    rpc,
+                    options,
+                    new SendOptions { Reliability = true });
+
+                GorillaBotPlugin.Log.LogInfo(
+                    $"[{_name}] Sent cosmetics RPC to actor {targetActor}: " +
+                    $"item={_equippedCosmeticId ?? "(none)"} ok={ok}");
+            }
+            catch (Exception ex)
+            {
+                GorillaBotPlugin.Log.LogWarning(
+                    $"[{_name}] SendCosmeticsRpc failed: {ex.Message}");
+            }
+        }
+
+        private void SendCosmeticsToOthers()
+        {
+            try
+            {
+                if (_photonClient == null || !_photonClient.InRoom || _botRigViewId <= 0)
+                    return;
+
+                string[] cosmeticNames = BuildRandomCosmeticDisplayNames();
+                string[] tryOnNames = BuildEmptyCosmeticDisplayNames();
+
+                if (cosmeticNames == null || cosmeticNames.Length != 11 ||
+                    tryOnNames == null || tryOnNames.Length != 11)
+                    return;
+
+                var rpc = new Hashtable
+                {
+                    [(byte)0] = _botRigViewId,
+                    [(byte)2] = GetBotServerTimestamp(),
+                    [(byte)3] = "UpdateCosmeticsWithTryon",
+                    [(byte)4] = new object[] { cosmeticNames, tryOnNames }
+                };
+
+                var options = new RaiseEventOptions
+                {
+                    Receivers = ReceiverGroup.Others
+                };
+
+                bool ok = _photonClient.OpRaiseEvent(
+                    200,
+                    rpc,
+                    options,
+                    new SendOptions { Reliability = true });
+
+                GorillaBotPlugin.Log.LogInfo(
+                    $"[{_name}] Published cosmetics to room clients: " +
+                    $"item={_equippedCosmeticId ?? "(none)"} ok={ok}");
+            }
+            catch (Exception ex)
+            {
+                GorillaBotPlugin.Log.LogWarning(
+                    $"[{_name}] SendCosmeticsToOthers failed: {ex.Message}");
+            }
+        }
+
         public void OnJoinedRoom()
         {
             _inRoom = true;
@@ -1301,6 +1493,10 @@ namespace GorillaBotIntegrated
                 "starting pose synchronization.");
 
             SendFixedRigTransform();
+
+            // Publish the cosmetic state once the remote rig exists. The bot
+            // also responds to the game's RequestCosmetics RPC in OnEvent.
+            SendCosmeticsToOthers();
         }
 
         private bool RaisePlayerNetworkControllerInstantiate()
@@ -1457,19 +1653,6 @@ namespace GorillaBotIntegrated
             return 0;
         }
 
-        private static Transform FindGorillaPlayerTransform()
-        {
-            try
-            {
-                GameObject gorillaPlayer = GameObject.Find("GorillaPlayer");
-                if (gorillaPlayer != null)
-                    return gorillaPlayer.transform;
-            }
-            catch { }
-
-            return null;
-        }
-
         public void ConfigureFormation(string mode, int slot, int total)
         {
             if (!Enum.TryParse(mode, true, out FormationMode parsed))
@@ -1525,34 +1708,6 @@ namespace GorillaBotIntegrated
                         if (d < side) return center + new Vector3(half - d, 0f, half);
                         d -= side;
                         return center + new Vector3(-half, 0f, half - d);
-                    }
-
-                case FormationMode.FollowLine:
-                    {
-                        Transform player = FindGorillaPlayerTransform();
-
-                        if (player == null)
-                            return ForestCenter;
-
-                        // Positive local Z is "behind" relative to the player's facing direction.
-                        // Each bot gets a slot farther behind the player.
-                        float spacing = Mathf.Clamp(
-                            _formationRadius * 0.6f,
-                            1.0f,
-                            3.0f
-                        );
-
-                        float distanceBehind =
-                            (_formationSlot + 1) * spacing;
-
-                        Vector3 behind =
-                            player.position -
-                            player.forward * distanceBehind;
-
-                        // Keep bots at roughly the same floor height as the player.
-                        behind.y = ForestCenter.y;
-
-                        return behind;
                     }
 
                 case FormationMode.Wave:
@@ -1933,7 +2088,7 @@ namespace GorillaBotIntegrated
                 if (_voiceTransport != null && _voiceTransport.IsConnected)
                     _voiceTransport.Service();
 
-                if (_botRigSpawnSent && _rigPositionSet && Time.time - _lastRigSendTime >= (1f / 60f))
+                if (_botRigSpawnSent && _rigPositionSet && Time.time - _lastRigSendTime >= 0.0333f)
                 {
                     _lastRigSendTime = Time.time;
                     SendFixedRigTransform();
@@ -2380,29 +2535,22 @@ namespace GorillaBotIntegrated
                 object voiceInfo = null;
                 foreach (var m in voiceInfoType.GetMethods(BindingFlags.Public | BindingFlags.Static))
                 {
-                    var voiceParams = m.GetParameters();
-                    if (voiceParams.Length < 4) continue;
-
+                    if (m.Name != "CreateAudioOpus") continue;
+                    var ps = m.GetParameters();
+                    if (ps.Length < 4) continue;
                     try
                     {
-                        var args = new object[voiceParams.Length];
-
+                        var args = new object[ps.Length];
                         args[0] = sampling16k;
                         args[1] = 1;
                         args[2] = frame20ms;
                         args[3] = 16000;
-
-                        for (int i = 4; i < voiceParams.Length; i++)
-                        {
-                            args[i] =
-                                voiceParams[i].HasDefaultValue
-                                    ? voiceParams[i].DefaultValue
-                                    : voiceParams[i].ParameterType.IsValueType
-                                        ? Activator.CreateInstance(voiceParams[i].ParameterType)
-                                        : null;
-                        }
+                        for (int i = 4; i < ps.Length; i++)
+                            args[i] = ps[i].HasDefaultValue ? ps[i].DefaultValue :
+                                (ps[i].ParameterType.IsValueType ? Activator.CreateInstance(ps[i].ParameterType) : null);
 
                         voiceInfo = m.Invoke(null, args);
+                        if (voiceInfo != null) break;
                     }
                     catch { }
                 }
@@ -2428,13 +2576,13 @@ namespace GorillaBotIntegrated
                     catch { sampleFloat = Enum.ToObject(audioSampleType, 1); }
                 }
 
-                var ps = createMethod.GetParameters();
-                var args2 = new object[ps.Length];
+                var createParams = createMethod.GetParameters();
+                var args2 = new object[createParams.Length];
                 args2[0] = voiceInfo;
                 args2[1] = reader;
-                if (ps.Length > 2) args2[2] = sampleFloat ?? 1;
-                if (ps.Length > 3) args2[3] = null;
-                if (ps.Length > 4) args2[4] = 0;
+                if (createParams.Length > 2) args2[2] = sampleFloat ?? 1;
+                if (createParams.Length > 3) args2[3] = null;
+                if (createParams.Length > 4) args2[4] = 0;
 
                 _localVoice = createMethod.Invoke(_voiceClient, args2) as LocalVoice;
                 if (_localVoice == null)
@@ -2443,7 +2591,7 @@ namespace GorillaBotIntegrated
                     return false;
                 }
 
-                _localVoice.TransmitEnabled = true;
+                _localVoice.TransmitEnabled = false;
 
                 try
                 {
