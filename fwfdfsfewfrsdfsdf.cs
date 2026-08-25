@@ -146,34 +146,7 @@ namespace GorillaBotIntegrated
                 }
             }
 
-            private VRRig FindBotVRRig()
-            {
-                VRRig[] rigs = UnityEngine.Object.FindObjectsOfType<VRRig>();
-
-                foreach (VRRig rig in rigs)
-                {
-                    if (rig == null)
-                        continue;
-
-                    if (rig.rigSerializer == null)
-                        continue;
-
-                    try
-                    {
-                        int ownerId = NetworkSystem.Instance.GetOwningPlayerID(
-                            rig.rigSerializer.gameObject);
-
-                        if (ownerId == _photonClient.LocalPlayer.ActorNumber)
-                            return rig;
-                    }
-                    catch
-                    {
-                        // Ignore rigs that aren't fully initialized yet.
-                    }
-                }
-
-                return null;
-            }
+          
 
             private static Type FindGameType(string typeName)
             {
@@ -863,6 +836,33 @@ namespace GorillaBotIntegrated
                 GorillaBotPlugin.Log.LogWarning(
                     $"[{_name}] SetRandomBotColor failed: {ex.Message}");
             }
+        }
+
+        private VRRig FindBotVRRig()
+        {
+            try
+            {
+                VRRig[] rigs = UnityEngine.Object.FindObjectsOfType<VRRig>();
+
+                foreach (VRRig rig in rigs)
+                {
+                    if (rig == null)
+                        continue;
+
+                    // The bot's rig should have the PhotonView that we created.
+                    PhotonView view = rig.GetComponent<PhotonView>();
+
+                    if (view != null && view.ViewID == _botRigViewId)
+                        return rig;
+                }
+            }
+            catch (Exception ex)
+            {
+                GorillaBotPlugin.Log.LogWarning(
+                    $"[{_name}] FindBotVRRig failed: {ex.Message}");
+            }
+
+            return null;
         }
 
         private IEnumerator ApplyBotVisualsWhenReady()
