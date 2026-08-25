@@ -18,6 +18,8 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
+using UnityEngine.UI;
+using GorillaNetworking;
 using UnityEngine.InputSystem;
 using ExitGames.Client.Photon;
 using Newtonsoft.Json.Linq;
@@ -142,6 +144,35 @@ namespace GorillaBotIntegrated
                     GorillaBotPlugin.Log.LogError(
                         $"[Patcher] OnPlayerEnteredRoom failed:\n{ex}");
                 }
+            }
+
+            private VRRig FindBotVRRig()
+            {
+                VRRig[] rigs = UnityEngine.Object.FindObjectsOfType<VRRig>();
+
+                foreach (VRRig rig in rigs)
+                {
+                    if (rig == null)
+                        continue;
+
+                    if (rig.rigSerializer == null)
+                        continue;
+
+                    try
+                    {
+                        int ownerId = NetworkSystem.Instance.GetOwningPlayerID(
+                            rig.rigSerializer.gameObject);
+
+                        if (ownerId == _photonClient.LocalPlayer.ActorNumber)
+                            return rig;
+                    }
+                    catch
+                    {
+                        // Ignore rigs that aren't fully initialized yet.
+                    }
+                }
+
+                return null;
             }
 
             private static Type FindGameType(string typeName)
@@ -816,7 +847,12 @@ namespace GorillaBotIntegrated
                 float green = UnityEngine.Random.Range(0f, 1f);
                 float blue = UnityEngine.Random.Range(0f, 1f);
 
-                rig.InitializeNoobMaterialLocal(red, green, blue);
+                rig.InitializeNoobMaterialLocal(
+                     red,
+                     green,
+                     blue,
+                     false
+                );
 
                 GorillaBotPlugin.Log.LogInfo(
                     $"[{_name}] Random color: " +
@@ -827,6 +863,30 @@ namespace GorillaBotIntegrated
                 GorillaBotPlugin.Log.LogWarning(
                     $"[{_name}] SetRandomBotColor failed: {ex.Message}");
             }
+        }
+
+        private IEnumerator ApplyBotVisualsWhenReady()
+        {
+            float elapsed = 0f;
+
+            while (elapsed < 5f)
+            {
+                elapsed += Time.deltaTime;
+
+                VRRig rig = FindBotVRRig();
+
+                if (rig != null)
+                {
+                    SetBotDisplayName(rig);
+                    SetRandomBotColor(rig);
+                    yield break;
+                }
+
+                yield return null;
+            }
+
+            GorillaBotPlugin.Log.LogWarning(
+                $"[{_name}] Could not find VRRig after 5 seconds.");
         }
 
         private static string ResolveAppVersion()
@@ -1694,8 +1754,9 @@ namespace GorillaBotIntegrated
 
             SendFixedRigTransform();
 
-            // Publish the cosmetic state once the remote rig exists. The bot
-            // also responds to the game's RequestCosmetics RPC in OnEvent.
+            GorillaBotPlugin.Instance.StartCoroutine(
+                ApplyBotVisualsWhenReady());
+
             SendCosmeticsToOthers();
         }
 
