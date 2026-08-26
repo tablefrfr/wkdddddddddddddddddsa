@@ -67,6 +67,58 @@ namespace GorillaBotIntegrated
             patcher.AddComponent<BotNetworkPatcher>();
         }
 
+        private void CapturePlayerPosition()
+        {
+            try
+            {
+                if (GorillaTagger.Instance == null)
+                {
+                    Log.LogWarning("[FORMATIONS] GorillaTagger.Instance is null.");
+                    return;
+                }
+
+                Transform playerTransform = null;
+
+                // Try the main GorillaTagger player object first.
+                if (GorillaTagger.Instance.offlineVRRig != null)
+                {
+                    playerTransform = GorillaTagger.Instance.offlineVRRig.transform;
+                }
+
+                if (playerTransform == null)
+                {
+                    Log.LogWarning(
+                        "[FORMATIONS] Could not find the local Gorilla player transform."
+                    );
+
+                    return;
+                }
+
+                _customWorldPosition = playerTransform.position;
+                _customLocalPosition = playerTransform.localPosition;
+                _customWorldRotation = playerTransform.rotation;
+                _customLocalRotation = playerTransform.localRotation;
+                _customLocalScale = playerTransform.localScale;
+
+                _customPositionSaved = true;
+
+                Log.LogInfo(
+                    "[FORMATIONS] Created custom position:\n" +
+                    $"World Position: {_customWorldPosition}\n" +
+                    $"Local Position: {_customLocalPosition}\n" +
+                    $"World Rotation: {_customWorldRotation.eulerAngles}\n" +
+                    $"Local Rotation: {_customLocalRotation.eulerAngles}\n" +
+                    $"Local Scale: {_customLocalScale}"
+                );
+            }
+            catch (Exception ex)
+            {
+                Log.LogError(
+                    $"[FORMATIONS] CapturePlayerPosition failed: {ex}"
+                );
+            }
+        }
+
 
         internal IAudioReader<float> GetSystemMicrophoneReader()
         {
@@ -186,6 +238,14 @@ namespace GorillaBotIntegrated
 
         private Rect _formationWindowRect = new Rect(570, 10, 310, 540);
         private bool _formationWindowInitialized = false;
+        private float _formationSpeed = 1.5f;
+
+        private bool _customPositionSaved = false;
+        private Vector3 _customWorldPosition;
+        private Vector3 _customLocalPosition;
+        private Quaternion _customWorldRotation;
+        private Quaternion _customLocalRotation;
+        private Vector3 _customLocalScale;
 
         private void OnGUI()
         {
@@ -203,45 +263,188 @@ namespace GorillaBotIntegrated
             _formationWindowRect = GUI.Window(99124, _formationWindowRect, DrawFormationWindow, "BOT FORMATIONS");
         }
 
+        private void ApplyCustomPosition()
+        {
+            if (!_customPositionSaved)
+            {
+                Log.LogWarning("[FORMATIONS] No custom position has been created.");
+                return;
+            }
+
+            if (_bots == null || _bots.Count == 0)
+            {
+                Log.LogWarning("[FORMATIONS] No bots are active.");
+                return;
+            }
+
+            for (int i = 0; i < _bots.Count; i++)
+            {
+                _bots[i].SetCustomFormationPosition(
+                    _customWorldPosition,
+                    _customWorldRotation,
+                    i,
+                    _bots.Count
+                );
+            }
+
+            Log.LogInfo(
+                $"[FORMATIONS] Applied custom player position to {_bots.Count} bots."
+            );
+        }
+
         private void DrawFormationWindow(int id)
         {
             GUILayout.BeginVertical();
+
             GUILayout.Label("=== FORMATIONS ===", Bold());
             GUILayout.Label($"Active bots: {_bots.Count}");
 
-            if (GUILayout.Button("DOWN", GUILayout.Height(30))) ApplyFormation("Down");
-            if (GUILayout.Button("BOUNCE", GUILayout.Height(30))) ApplyFormation("Bounce");
+            GUILayout.Space(5);
+
+            // Formation speed
+            GUILayout.Label($"Formation Speed: {_formationSpeed:F2}");
+
+            float newSpeed = GUILayout.HorizontalSlider(
+                _formationSpeed,
+                0.05f,
+                10.0f,
+                GUILayout.Width(280)
+            );
+
+            if (!Mathf.Approximately(newSpeed, _formationSpeed))
+            {
+                _formationSpeed = newSpeed;
+
+                foreach (BotInstance bot in _bots.ToList())
+                    bot.SetFormationSpeed(_formationSpeed);
+            }
 
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("CIRCLE", GUILayout.Height(30))) ApplyFormation("Circle");
-            if (GUILayout.Button("SQUARE", GUILayout.Height(30))) ApplyFormation("Square");
-            GUILayout.EndHorizontal();
 
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button("WAVE", GUILayout.Height(30))) ApplyFormation("Wave");
-            if (GUILayout.Button("LINE", GUILayout.Height(30))) ApplyFormation("Line");
-            GUILayout.EndHorizontal();
+            if (GUILayout.Button("SLOW", GUILayout.Height(26)))
+            {
+                _formationSpeed = Mathf.Max(0.05f, _formationSpeed - 0.25f);
 
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button("TRIANGLE", GUILayout.Height(30))) ApplyFormation("Triangle");
-            if (GUILayout.Button("DIAMOND", GUILayout.Height(30))) ApplyFormation("Diamond");
-            GUILayout.EndHorizontal();
+                foreach (BotInstance bot in _bots.ToList())
+                    bot.SetFormationSpeed(_formationSpeed);
+            }
 
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button("GRID", GUILayout.Height(30))) ApplyFormation("Grid");
-            if (GUILayout.Button("SPIRAL", GUILayout.Height(30))) ApplyFormation("Spiral");
-            GUILayout.EndHorizontal();
+            if (GUILayout.Button("FAST", GUILayout.Height(26)))
+            {
+                _formationSpeed = Mathf.Min(10f, _formationSpeed + 0.25f);
 
-            if (GUILayout.Button("HELIX", GUILayout.Height(30))) ApplyFormation("Helix");
-            if (GUILayout.Button("SPAZ", GUILayout.Height(36))) ApplyFormation("Spaz");
+                foreach (BotInstance bot in _bots.ToList())
+                    bot.SetFormationSpeed(_formationSpeed);
+            }
+
+            GUILayout.EndHorizontal();
 
             GUILayout.Space(8);
-            GUILayout.Label("SPAZ jitters body, head and both hands near the forest spawn point.");
+
+            // Custom player position
+            GUILayout.Label("=== CUSTOM POSITION ===", Bold());
+
+            if (GUILayout.Button("CREATE POSITION", GUILayout.Height(32)))
+            {
+                CapturePlayerPosition();
+            }
+
+            if (_customPositionSaved)
+            {
+                GUILayout.Label(
+                    $"World: {_customWorldPosition.x:F2}, " +
+                    $"{_customWorldPosition.y:F2}, " +
+                    $"{_customWorldPosition.z:F2}"
+                );
+
+                GUILayout.Label(
+                    $"Local: {_customLocalPosition.x:F2}, " +
+                    $"{_customLocalPosition.y:F2}, " +
+                    $"{_customLocalPosition.z:F2}"
+                );
+
+                if (GUILayout.Button("USE SAVED POSITION", GUILayout.Height(30)))
+                {
+                    ApplyCustomPosition();
+                }
+            }
+            else
+            {
+                GUILayout.Label("No custom position saved.");
+            }
+
+            GUILayout.Space(8);
+
+            if (GUILayout.Button("DOWN", GUILayout.Height(30)))
+                ApplyFormation("Down");
+
+            if (GUILayout.Button("BOUNCE", GUILayout.Height(30)))
+                ApplyFormation("Bounce");
+
+            GUILayout.BeginHorizontal();
+
+            if (GUILayout.Button("CIRCLE", GUILayout.Height(30)))
+                ApplyFormation("Circle");
+
+            if (GUILayout.Button("SQUARE", GUILayout.Height(30)))
+                ApplyFormation("Square");
+
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+
+            if (GUILayout.Button("WAVE", GUILayout.Height(30)))
+                ApplyFormation("Wave");
+
+            if (GUILayout.Button("LINE", GUILayout.Height(30)))
+                ApplyFormation("Line");
+
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+
+            if (GUILayout.Button("TRIANGLE", GUILayout.Height(30)))
+                ApplyFormation("Triangle");
+
+            if (GUILayout.Button("DIAMOND", GUILayout.Height(30)))
+                ApplyFormation("Diamond");
+
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+
+            if (GUILayout.Button("GRID", GUILayout.Height(30)))
+                ApplyFormation("Grid");
+
+            if (GUILayout.Button("SPIRAL", GUILayout.Height(30)))
+                ApplyFormation("Spiral");
+
+            GUILayout.EndHorizontal();
+
+            if (GUILayout.Button("HELIX", GUILayout.Height(30)))
+                ApplyFormation("Helix");
+
+            if (GUILayout.Button("SPAZ", GUILayout.Height(36)))
+                ApplyFormation("Spaz");
+
+            if (GUILayout.Button("TELEPORTER", GUILayout.Height(36)))
+                ApplyFormation("Teleporter");
+
+            GUILayout.Label(
+                "TELEPORTER randomly relocates each bot every 0.5 seconds."
+            );
+
+            GUILayout.Space(8);
+
+            GUILayout.Label(
+                "SPAZ jitters body, head and both hands near the forest spawn point."
+            );
 
             if (GUILayout.Button("DISCONNECT ALL BOTS", GUILayout.Height(34)))
                 DisconnectAllBots();
 
             GUILayout.EndVertical();
+
             GUI.DragWindow(new Rect(0, 0, 10000, 22));
         }
 
@@ -758,7 +961,8 @@ namespace GorillaBotIntegrated
             Grid,
             Spiral,
             Helix,
-            Spaz
+            Spaz,
+            Teleporter
         }
 
         private FormationMode _formationMode = FormationMode.Down;
@@ -768,6 +972,17 @@ namespace GorillaBotIntegrated
         private float _formationRadius = 4.0f;
         private float _formationHeight = 3.0f;
         private float _formationPhase;
+
+        private float _teleporterTimer;
+        private const float TeleporterInterval = 0.5f;
+
+        private Vector3 _teleporterPosition;
+        private Quaternion _teleporterHeadRotation;
+        private Quaternion _teleporterRightHandRotation;
+        private Quaternion _teleporterLeftHandRotation;
+
+        private Vector3 _teleporterRightHandOffset;
+        private Vector3 _teleporterLeftHandOffset;
 
         private static readonly Vector3 ForestCenter = new Vector3(-63.735f, 3.4254f, -63.9312f);
 
@@ -789,6 +1004,50 @@ namespace GorillaBotIntegrated
             _allowCreate = false;
             _hopPublic = string.IsNullOrEmpty(_targetRoom);
         }
+
+        private void GenerateTeleporterPose()
+        {
+            // Stay around the forest spawn/formation center.
+            Vector3 center = ForestCenter;
+
+            // Random position around the center.
+            float radius = UnityEngine.Random.Range(0.5f, 5.0f);
+            float angle = UnityEngine.Random.Range(0f, Mathf.PI * 2f);
+
+            _teleporterPosition =
+                center +
+                new Vector3(
+                    Mathf.Cos(angle) * radius,
+                    UnityEngine.Random.Range(0.0f, 3.5f),
+                    Mathf.Sin(angle) * radius
+                );
+
+            // Completely random head rotation.
+            _teleporterHeadRotation = UnityEngine.Random.rotation;
+
+            // Random arm directions.
+            _teleporterRightHandRotation = UnityEngine.Random.rotation;
+            _teleporterLeftHandRotation = UnityEngine.Random.rotation;
+
+            // Random arm positions around the body.
+            _teleporterRightHandOffset = new Vector3(
+                UnityEngine.Random.Range(-1.5f, 1.5f),
+                UnityEngine.Random.Range(-1.0f, 2.0f),
+                UnityEngine.Random.Range(-1.5f, 1.5f)
+            );
+
+            _teleporterLeftHandOffset = new Vector3(
+                UnityEngine.Random.Range(-1.5f, 1.5f),
+                UnityEngine.Random.Range(-1.0f, 2.0f),
+                UnityEngine.Random.Range(-1.5f, 1.5f)
+            );
+
+            _rigYaw = UnityEngine.Random.Range(0, 360);
+
+            _teleporterTimer = Time.time + TeleporterInterval;
+        }
+
+
 
         private void SetBotDisplayName(VRRig rig)
         {
@@ -1914,6 +2173,8 @@ namespace GorillaBotIntegrated
             return 0;
         }
 
+
+
         public void ConfigureFormation(string mode, int slot, int total)
         {
             if (!Enum.TryParse(mode, true, out FormationMode parsed))
@@ -1931,9 +2192,49 @@ namespace GorillaBotIntegrated
                 $"[{_name}] Formation={_formationMode} slot={_formationSlot + 1}/{_formationTotal}");
         }
 
+        public void SetFormationSpeed(float speed)
+        {
+            _formationSpeed = Mathf.Clamp(speed, 0.05f, 10f);
+
+            UpdateFormationPosition(true);
+        }
+
+        private bool _useCustomFormationPosition;
+        private Vector3 _customFormationPosition;
+        private Quaternion _customFormationRotation;
+
+        public void SetCustomFormationPosition(
+            Vector3 position,
+            Quaternion rotation,
+            int slot,
+            int total)
+        {
+            _useCustomFormationPosition = true;
+
+            _customFormationPosition = position;
+            _customFormationRotation = rotation;
+
+            _formationSlot = Mathf.Max(0, slot);
+            _formationTotal = Mathf.Max(1, total);
+
+            _rigPosition = position;
+            _rigYaw = Mathf.RoundToInt(rotation.eulerAngles.y);
+            _rigPositionSet = true;
+
+            GorillaBotPlugin.Log.LogInfo(
+                $"[{_name}] Custom formation position set to " +
+                $"{position} yaw={_rigYaw}"
+            );
+        }
+
         private Vector3 GetFormationPosition()
         {
-            Vector3 center = ForestCenter;
+            Vector3 center =
+               _useCustomFormationPosition
+                ? _customFormationPosition
+                : ForestCenter;
+
+
             float total = Mathf.Max(1, _formationTotal);
             float slot = _formationSlot;
             float t = Time.time * _formationSpeed + _formationPhase;
@@ -2044,6 +2345,14 @@ namespace GorillaBotIntegrated
                         float z = (Mathf.PerlinNoise(0.4f, t * 4.1f + slot) - 0.5f) * amp * 2f;
                         float y = (Mathf.PerlinNoise(t * 4.7f + slot, t * 2.3f) - 0.5f) * Mathf.Max(0.5f, _formationHeight * 0.5f);
                         return center + new Vector3(x, y, z);
+                    }
+
+                case FormationMode.Teleporter:
+                    {
+                        if (Time.time >= _teleporterTimer)
+                            GenerateTeleporterPose();
+
+                        return _teleporterPosition;
                     }
             }
 
@@ -2202,6 +2511,30 @@ namespace GorillaBotIntegrated
 
                 Vector3 leftHand =
                     _rigPosition + new Vector3(-0.22f, 0f, 0f);
+
+                if (_formationMode == FormationMode.Teleporter)
+                {
+                    if (Time.time >= _teleporterTimer)
+                        GenerateTeleporterPose();
+
+                    headPos = _rigPosition + new Vector3(
+                        0f,
+                        UnityEngine.Random.Range(0.45f, 1.2f),
+                        0f
+                    );
+
+                    rightHand =
+                        _rigPosition +
+                        _teleporterRightHandOffset;
+
+                    leftHand =
+                        _rigPosition +
+                        _teleporterLeftHandOffset;
+
+                    headRotation = _teleporterHeadRotation;
+                    rightHandRotation = _teleporterRightHandRotation;
+                    leftHandRotation = _teleporterLeftHandRotation;
+                }
 
                 Quaternion headRotation = Quaternion.identity;
                 Quaternion rightHandRotation = Quaternion.identity;
@@ -2705,7 +3038,7 @@ namespace GorillaBotIntegrated
                 object reader = Activator.CreateInstance(wrapperType, new[] { audioClip });
                 var loopProp = wrapperType.GetProperty("Loop");
                 if (loopProp != null && loopProp.CanWrite)
-                    loopProp.SetValue(reader, true);
+                    loopProp.SetValue(reader, false);
 
                 return StartVoiceFromReader(reader, "audio clip");
             }
@@ -2830,7 +3163,7 @@ namespace GorillaBotIntegrated
                     return false;
                 }
 
-                _localVoice.TransmitEnabled = false;
+                _localVoice.TransmitEnabled = true;
 
                 try
                 {
